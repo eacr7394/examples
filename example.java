@@ -20,6 +20,7 @@ class OpenApiPathSelectorUI extends JFrame {
     private final JList<String> allPathsList = new JList<>(allPathsModel);
     private final JList<String> selectedPathsList = new JList<>(selectedPathsModel);
     private final JTextArea curlTextArea = new JTextArea(5, 40);
+    private final JTextField filePathField = new JTextField(40);
     private Map<String, Object> openApi;
 
     public OpenApiPathSelectorUI() {
@@ -39,6 +40,7 @@ class OpenApiPathSelectorUI extends JFrame {
 
         JPanel topPanel = new JPanel();
         topPanel.add(loadButton);
+        topPanel.add(filePathField);
 
         JPanel centerPanel = new JPanel(new GridLayout(1, 3));
         centerPanel.add(new JScrollPane(allPathsList));
@@ -62,6 +64,7 @@ class OpenApiPathSelectorUI extends JFrame {
     private void loadOpenApiFile(ActionEvent e) {
         File file = OpenApiFileLoader.chooseFile(this);
         if (file != null) {
+            filePathField.setText(file.getAbsolutePath());
             try {
                 openApi = OpenApiFileLoader.loadOpenApi(file);
                 Map<String, Object> paths = (Map<String, Object>) openApi.get("paths");
