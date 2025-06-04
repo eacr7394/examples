@@ -1,60 +1,16 @@
-Excelente pregunta. Para que al abrir el programa se **autopoblen los campos (paths, versión, autor, descripción y ejemplos curl)** desde un `.json` guardado anteriormente, debes:
+# === 1. OpenApiApp.java ===
+"""
+import javax.swing.SwingUtilities;
 
----
-
-## ✅ PASOS PARA AUTOCARGA DESDE `configuracion.json`
-
----
-
-### 🟦 1. Agrega método `loadConfigFromJson()`
-
-En `OpenApiPathSelectorUI.java`, agrega:
-
-```java
-private void loadConfigFromJson(File jsonFile) {
-    try {
-        ObjectMapper mapper = new ObjectMapper();
-        DocumentationConfig config = mapper.readValue(jsonFile, DocumentationConfig.class);
-
-        versionField.setText(config.version);
-        authorField.setText(config.developer);
-        changeDescArea.setText(config.description);
-
-        selectedPathsModel.clear();
-        pathErrorsMap.clear();
-
-        for (PathConfig pathCfg : config.paths) {
-            selectedPathsModel.addElement(pathCfg.path);
-            pathErrorsMap.put(pathCfg.path, new HashMap<>(pathCfg.errors));
-        }
-
-        showInfo("Configuración cargada desde JSON");
-    } catch (Exception ex) {
-        showError("Error cargando configuración JSON: " + ex.getMessage());
+public class OpenApiApp {
+    public static void main(String[] args) {
+        SwingUtilities.invokeLater(() -> new OpenApiPathSelectorUI().setVisible(true));
     }
 }
-```
+"""
 
----
-
-### 🟦 2. Llama a ese método en el constructor si el archivo existe:
-
-```java
-File configFile = new File("configuracion.json");
-if (configFile.exists()) {
-    loadConfigFromJson(configFile);
-}
-```
-
-Colócalo al final del constructor de `OpenApiPathSelectorUI`.
-
----
-
-### 🟦 3. Asegúrate que estas clases están bien definidas:
-
-#### 📄 `DocumentationConfig.java`
-
-```java
+# === 2. DocumentationConfig.java ===
+"""
 import java.util.List;
 
 public class DocumentationConfig {
@@ -72,11 +28,10 @@ public class DocumentationConfig {
         this.paths = paths;
     }
 }
-```
+"""
 
-#### 📄 `PathConfig.java`
-
-```java
+# === 3. PathConfig.java ===
+"""
 import java.util.Map;
 
 public class PathConfig {
@@ -90,14 +45,128 @@ public class PathConfig {
         this.errors = errors;
     }
 }
-```
+"""
 
----
+# === 4. SimpleDocumentListener.java ===
+"""
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 
-## ✅ Resultado
+@FunctionalInterface
+public interface SimpleDocumentListener extends DocumentListener {
+    void update(DocumentEvent e);
 
-* Al abrir la aplicación, si existe `configuracion.json`, todos los campos se cargarán automáticamente.
-* Los `paths` se mostrarán en la lista seleccionada.
-* Los ejemplos `curl` estarán disponibles en su campo correspondiente al seleccionar path + error.
+    default void insertUpdate(DocumentEvent e) { update(e); }
+    default void removeUpdate(DocumentEvent e) { update(e); }
+    default void changedUpdate(DocumentEvent e) { update(e); }
+}
+"""
 
-¿Quieres que también recargue el último OpenAPI usado si estaba guardado en ese JSON?
+# === 5. OpenApiFileLoader.java ===
+"""
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
+import javax.swing.*;
+import java.awt.*;
+import java.io.File;
+import java.util.Map;
+
+public class OpenApiFileLoader {
+    public static File chooseFile(Component parent) {
+        JFileChooser fileChooser = new JFileChooser();
+        int result = fileChooser.showOpenDialog(parent);
+        return result == JFileChooser.APPROVE_OPTION ? fileChooser.getSelectedFile() : null;
+    }
+
+    public static Map<String, Object> loadOpenApi(File file) throws Exception {
+        ObjectMapper mapper = new ObjectMapper(new YAMLFactory());
+        return mapper.readValue(file, Map.class);
+    }
+}
+"""
+
+# === 6. PdfGenerator.java ===
+"""
+public class PdfGenerator {
+    public static void generate(String mdFile, String pdfFile) {
+        try {
+            ProcessBuilder pb = new ProcessBuilder("pandoc", mdFile, "-o", pdfFile);
+            pb.inheritIO();
+            Process p = pb.start();
+            p.waitFor();
+        } catch (Exception ex) {
+            ex.printStackTrace();
+        }
+    }
+}
+"""
+
+# === 7. MarkdownGenerator.java ===
+"""
+import java.io.FileWriter;
+import java.io.PrintWriter;
+import java.text.SimpleDateFormat;
+import java.util.*;
+
+public class MarkdownGenerator {
+    public static void generate(List<PathConfig> paths, String version, String developer, String description, String outputFile) {
+        try (PrintWriter out = new PrintWriter(new FileWriter(outputFile))) {
+            String fechaActual = new SimpleDateFormat("yyyy-MM-dd").format(new Date());
+
+            out.println("<div style='page-break-after: always'></div>");
+            out.println("# Documentación Técnica de Interfaz");
+            out.println("### BIF: Canal Digital  Nombre: [DEFINIR]");
+            out.println("### Presidencia de Tecnología\n");
+
+            out.println("### HISTORIAL DE MODIFICACIONES");
+            out.println("| Versión | Fecha | Autor | Descripción |");
+            out.println("|---------|-------|-------|-------------|");
+            out.printf("| %s | %s | %s | %s |\n", version, fechaActual, developer, description);
+            out.println();
+
+            for (PathConfig pathConfig : paths) {
+                out.println("<div style='page-break-after: always'></div>");
+                out.println("## ENDPOINT");
+                out.println("**Método:** POST");
+                out.printf("**URL:** `%s`\n\n", pathConfig.path);
+                out.println("**Tipo de consumo:** Body + Headers\n");
+
+                out.println("### PARÁMETROS DE ENTRADA");
+                out.println("| Nombre | Tipo de dato | Ubicación | Requerido | Descripción |");
+                out.println("|--------|--------------|-----------|-----------|-------------|");
+                out.println("| Authorization | String | Header | Sí | Token de autorización |");
+                out.println("| Accept-Language | String | Header | No | Idioma preferido |");
+                out.println("| application | String | Header | Sí | Aplicación que invoca |\n");
+
+                out.println("### BODY DE ENTRADA");
+                out.println("```json");
+                out.println("{\n  \"campo1\": \"valor1\",\n  \"campo2\": 123\n}");
+                out.println("```");
+
+                out.println("### RESPUESTA");
+                out.println("```json");
+                out.println("{\n  \"status\": \"OK\"\n}");
+                out.println("```");
+
+                out.println("### ERRORES");
+                out.println("| Código | Tipo | Descripción |");
+                out.println("|--------|------|-------------|");
+                for (Map.Entry<String, String> entry : pathConfig.errors.entrySet()) {
+                    out.printf("| %s | Lógico | %s |\n", entry.getKey(), entry.getValue().split("\n")[0]);
+                }
+
+                out.println("### CURL");
+                for (Map.Entry<String, String> entry : pathConfig.errors.entrySet()) {
+                    out.printf("#### Código %s\n", entry.getKey());
+                    out.println("```bash");
+                    out.println(entry.getValue());
+                    out.println("```");
+                }
+            }
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+}
+"""
