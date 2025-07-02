@@ -1,22 +1,42 @@
-import software.amazon.awssdk.enhanced.dynamodb.*;
-import software.amazon.awssdk.services.dynamodb.DynamoDbAsyncClient;
+public Uni<List<T>> findBy(DynamoColumn column) {
+    if (column == null || column.getValue() == null)
+        return Uni.createFrom().failure(new IllegalArgumentException("Column is required"));
 
-public abstract class BaseDynamoRepository<T> {
+    // Si es índice, usamos index
+    if (column.isIndex()) {
+        DynamoDbAsyncIndex<T> index = table.index(column.getName());
 
-    protected final DynamoDbEnhancedAsyncClient enhancedClient;
-    protected final DynamoDbAsyncTable<T> table;
+        Key.Builder keyBuilder = Key.builder();
 
-    protected BaseDynamoRepository(
-        DynamoDbAsyncClient dynamoDbAsyncClient,
-        Class<T> entityClass,
-        String tableName
-    ) {
-        this.enhancedClient = DynamoDbEnhancedAsyncClient.builder()
-            .dynamoDbClient(dynamoDbAsyncClient)
+        if (column.isPk()) {
+            keyBuilder.partitionValue(column.getValue());
+        }
+
+        if (column.isSk()) {
+            keyBuilder.sortValue(column.getValue()); // O usar beginsWith, según necesidad
+        }
+
+        QueryEnhancedRequest request = QueryEnhancedRequest.builder()
+            .queryConditional(QueryConditional.keyEqualTo(keyBuilder.build()))
             .build();
 
-        this.table = enhancedClient.table(tableName, TableSchema.fromBean(entityClass));
+        return Multi.createFrom().publisher(index.query(request))
+            .onItem().transformToMulti(p -> Multi.createFrom().iterable(p.items()))
+            .collect().asList();
     }
 
-    // Aquí vendrían tus métodos findBy(), findAll(), delete(), etc.
+    // Si no es índice, hacemos un scan + filtro por reflexión (más costoso)
+    return findAll().onItem().transform(list ->
+        list.stream()
+            .filter(item -> {
+                try {
+                    String getterName = "get" + column.getName().substring(0, 1).toUpperCase() + column.getName().substring(1);
+                    Object value = item.getClass().getMethod(getterName).invoke(item);
+                    return value != null && value.toString().equals(column.getValue());
+                } catch (Exception e) {
+                    return false;
+                }
+            })
+            .collect(Collectors.toList())
+    );
 }
