@@ -1,42 +1,35 @@
-public static <T> StaticTableSchema<T> getStaticTableSchema(Class<T> clazz) {
-    StaticTableSchema.Builder<T> schema = StaticTableSchema.builder(clazz)
-        .newItemSupplier(() -> {
-            try {
-                return clazz.getDeclaredConstructor().newInstance();
-            } catch (Exception e) {
-                throw new RuntimeException("No se pudo instanciar " + clazz.getName(), e);
+else {
+    if (Collection.class.isAssignableFrom(type)) {
+        // Obtener tipo T desde List<T>
+        Type genericType = field.getGenericType();
+        if (genericType instanceof ParameterizedType parameterizedType) {
+            Type elementType = parameterizedType.getActualTypeArguments()[0];
+            if (elementType instanceof Class<?> elementClass) {
+                StaticTableSchema<?> nestedSchema = getStaticTableSchema(elementClass);
+
+                schema.addAttribute(
+                    StaticAttribute.builder(
+                        EnhancedType.listOf(
+                            EnhancedType.documentOf(elementClass, nestedSchema)
+                        )
+                    )
+                    .name(fieldName)
+                    .getter(obj -> ReflectionUtil.get(field, obj))
+                    .setter((obj, val) -> ReflectionUtil.set(field, obj, val))
+                );
             }
-        });
+        }
+    } else {
+        // Tipo complejo (objeto embebido no lista)
+        StaticTableSchema<?> nestedSchema = getStaticTableSchema(type);
 
-    for (var field : clazz.getDeclaredFields()) {
-        field.setAccessible(true); // por si es private
-        String fieldName = field.getName();
-        Class<?> type = field.getType();
-
-        // Necesitamos castear explícitamente a Class<X>
-        @SuppressWarnings("unchecked")
-        Class<Object> castedType = (Class<Object>) type;
-
-        schema.addAttribute(castedType, a -> a
+        schema.addAttribute(
+            StaticAttribute.builder(
+                EnhancedType.documentOf(type, nestedSchema)
+            )
             .name(fieldName)
-            .getter(obj -> {
-                try {
-                    field.setAccessible(true);
-                    return field.get(obj);
-                } catch (IllegalAccessException e) {
-                    throw new RuntimeException(e);
-                }
-            })
-            .setter((obj, val) -> {
-                try {
-                    field.setAccessible(true);
-                    field.set(obj, val);
-                } catch (IllegalAccessException e) {
-                    throw new RuntimeException(e);
-                }
-            })
+            .getter(obj -> ReflectionUtil.get(field, obj))
+            .setter((obj, val) -> ReflectionUtil.set(field, obj, val))
         );
     }
-
-    return schema.build();
 }
